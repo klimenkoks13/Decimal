@@ -1,13 +1,8 @@
 #ifndef S21_DECIMAL_H
 #define S21_DECIMAL_H
 
-#define S21_MAX_SCALE 28
-#define S21_SIGN_MASK 0x80000000u
-#define S21_SCALE_MASK 0x00FF0000
-
-typedef struct 
-{
-    int bits[4];
+typedef struct {
+  int bits[4];
 } s21_decimal;
 
 int s21_add(s21_decimal value_1, s21_decimal value_2, s21_decimal *result);
