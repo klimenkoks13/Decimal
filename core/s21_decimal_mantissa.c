@@ -34,17 +34,15 @@ void s21_shift_left(s21_decimal *value, int shift) {
   if (shift <= 0) {
     return;
   } else if (shift >= 96) {
-    value->bits[0] = 0;
-    value->bits[1] = 0;
-    value->bits[2] = 0;
+    s21_zero_mantissa(value);
   } else {
     for (int s = 0; s < shift; s++) {
       uint32_t carry = 0; // переносимый бит
       for (int word = 0; word < 3; word++) {
         uint32_t w = (uint32_t)value->bits[word];
         uint32_t next_carry =
-            (w >> 31) & 1u; // сдвигаем старший бит в младший и запоминаем,
-                            // уйдёт в следующее слово
+            (w >> 31) & 1u;   // сдвигаем старший бит в младший и запоминаем,
+                              // уйдёт в следующее слово
         w = (w << 1) | carry; // сдвигаем и добавляем перенос из младшего слова
         value->bits[word] = (int)w;
         carry = next_carry; // перенос для следующего (старшего) слова
@@ -57,9 +55,7 @@ void s21_shift_right(s21_decimal *value, int shift) {
   if (shift <= 0) {
     return;
   } else if (shift >= 96) {
-    value->bits[0] = 0;
-    value->bits[1] = 0;
-    value->bits[2] = 0;
+    s21_zero_mantissa(value);
   } else {
     for (int s = 0; s < shift; s++) {
       uint32_t carry = 0;
@@ -74,12 +70,114 @@ void s21_shift_right(s21_decimal *value, int shift) {
   }
 }
 
-int s21_cmp_mantissa(s21_decimal a, s21_decimal b);
-int s21_add_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res);
-int s21_sub_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res);
-int s21_mul_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res);
+// сравнение мантисс без знака 0 - равны, 1 - а больше b, -1 - b больше а
+int s21_cmp_mantissa(s21_decimal a, s21_decimal b) {
+  int res = 0;
+  for (int i = 2; i >= 0; i--) {
+    if (a.bits[i] != b.bits[i] && !res) {
+      res = (uint32_t)a.bits[i] > (uint32_t)b.bits[i] ? 1 : -1;
+    }
+  }
+  return res;
+}
+
+// этот пиздец ниже надо разбирать
+
+// складываем мантиссы, от младшего слов к старшему
+int s21_add_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res) {
+  s21_zero_mantissa(res);
+  uint32_t carry = 0;
+  uint64_t sum = 0;
+  for (int i = 0; i < 3; i++) {
+    sum = (int64_t)(uint32_t)a.bits[i] + (int64_t)(uint32_t)b.bits[i] + carry;
+    res->bits[i] = (int)(uint32_t)sum;
+    carry = sum >> 32;
+  }
+  return carry != 0 ? 1 : 0;
+}
+
+int s21_sub_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res) {
+  s21_zero_mantissa(res);
+  int64_t borrow = 0;
+  for (int i = 0; i < 3; i++) {
+    int64_t diff =
+        (int64_t)(uint32_t)a.bits[i] - (int64_t)(uint32_t)b.bits[i] - borrow;
+    if (diff < 0) {
+      res->bits[i] = diff + ((int64_t)1 << 32);
+      borrow = 1;
+    } else {
+      res->bits[i] = diff;
+      borrow = 0;
+    }
+  }
+  return borrow != 0 ? 1 : 0;
+}
+
+// временно
+int s21_mul_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res) {
+  uint32_t r[6] = {0};
+  int exit_code = 0;
+
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      uint64_t prod =
+          (uint64_t)(uint32_t)a.bits[i] * (uint64_t)(uint32_t)b.bits[j];
+      uint64_t carry = prod;
+      for (int k = i + j; k < 6 && carry != 0; k++) {
+        uint64_t sum = (uint64_t)r[k] + (carry & 0xFFFFFFFFu);
+        r[k] = (uint32_t)sum;
+        carry = (carry >> 32) + (sum >> 32);
+      }
+    }
+  }
+
+  // Переполнение, если старшие 96 бит не нули
+  if (r[3] != 0 || r[4] != 0 || r[5] != 0) {
+    exit_code = 1;
+  }
+
+  res->bits[0] = (int)r[0];
+  res->bits[1] = (int)r[1];
+  res->bits[2] = (int)r[2];
+
+  return exit_code;
+}
+
+// временно
 int s21_div_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res,
-                     s21_decimal *rem);
+                     s21_decimal *rem) {
+  int exit_code = 0;
+  if (s21_is_zero(b))
+    exit_code = 1;
+
+  s21_zero_mantissa(res);
+  s21_zero_mantissa(rem);
+
+  for (int i = 95; i >= 0; i--) {
+    // Запоминаем, вылетит ли старший бит остатка при сдвиге.
+    // Если да — это значит, что остаток >= 2^95, и после сдвига
+    // он заведомо больше делителя.
+    int overflow = s21_get_bit(*rem, 95);
+
+    // Сдвигаем остаток влево на 1: «освобождаем» младший бит.
+    s21_shift_left(rem, 1);
+
+    // Сносим i-й бит делимого в младший бит остатка.
+    if (s21_get_bit(a, i)) {
+      s21_set_bit(rem, 0, 1);
+    }
+
+    // Если остаток >= делителя (или был переполнен при сдвиге) —
+    // вычитаем делитель и ставим 1 в i-й бит частного.
+    if (overflow || s21_cmp_mantissa(*rem, b) >= 0) {
+      s21_sub_mantissa(*rem, b, rem);
+      s21_set_bit(res, i, 1);
+    }
+  }
+
+  return exit_code;
+}
+
 int s21_mul_by_10(s21_decimal *value);
 int s21_div_by_10(s21_decimal *value, int *remainder);
 int s21_get_mantissa_digits(s21_decimal value);

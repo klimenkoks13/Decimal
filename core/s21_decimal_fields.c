@@ -1,7 +1,6 @@
 #include "../s21_decimal_internal.h"
 
 #include <stddef.h>
-#include <stdint.h>
 
 // накладываем маску знака, возвращаем 1 на минус 0 на плюс
 int s21_get_sign(s21_decimal value) {
@@ -29,7 +28,13 @@ void s21_set_scale(s21_decimal *value, int scale) {
 
 // обнуляем
 void s21_zero_decimal(s21_decimal *value) {
-  for (int i = 0; i < 4; i++) {
+  s21_zero_mantissa(value);
+  value->bits[3] = 0;
+}
+
+// обнуляем только мантиссу
+void s21_zero_mantissa(s21_decimal *value) {
+  for (int i = 0; i < 3; i++) {
     value->bits[i] = 0;
   }
 }
