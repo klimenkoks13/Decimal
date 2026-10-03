@@ -1,6 +1,9 @@
 #include "../s21_decimal_internal.h"
 
+#include <stddef.h>
 #include <stdint.h>
+
+static const s21_decimal S21_DECIMAL_TEN = {{10, 0, 0, 0}};
 
 int s21_get_bit(s21_decimal value, int bit_index) {
   int bit;
@@ -178,6 +181,33 @@ int s21_div_mantissa(s21_decimal a, s21_decimal b, s21_decimal *res,
   return exit_code;
 }
 
-int s21_mul_by_10(s21_decimal *value);
-int s21_div_by_10(s21_decimal *value, int *remainder);
-int s21_get_mantissa_digits(s21_decimal value);
+int s21_mul_by_10(s21_decimal *value) {
+  s21_decimal tmp = *value;
+  return s21_mul_mantissa(tmp, S21_DECIMAL_TEN, value);
+}
+
+int s21_div_by_10(s21_decimal *value, int *rem) {
+  int exit_code = 0;
+  if (value == NULL || rem == NULL) {
+    exit_code = 1;
+  } else {
+    *rem = 0;
+    for (int i = 2; i >= 0; i--) {
+      uint32_t w = value->bits[i];
+      uint64_t cur_rem = ((uint64_t)*rem << 32) + w;
+      value->bits[i] = (int)(uint32_t)(cur_rem / 10);
+      *rem = cur_rem % 10;
+    }
+  }
+  return exit_code;
+}
+
+int s21_get_mantissa_digits(s21_decimal value) {
+  int count = 0;
+  int rem = 0;
+  do {
+    s21_div_by_10(&value, &rem);
+    count++;
+  } while (!s21_is_zero(value));
+  return count;
+}

@@ -30,4 +30,10 @@ int s21_mul_by_10(s21_decimal *value);
 int s21_div_by_10(s21_decimal *value, int *remainder);
 int s21_get_mantissa_digits(s21_decimal value);
 
+int s21_align_scales(s21_decimal *a, s21_decimal *b);
+int s21_increase_scale(s21_decimal *value, int delta);
+int s21_decrease_scale(s21_decimal *value, int delta);
+int s21_normalize_scale(s21_decimal *value);
+int s21_fit_scale(s21_decimal *value);
+
 #endif
